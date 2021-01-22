@@ -1,34 +1,23 @@
-FROM ruby@sha256:7c77d7351acbf335aeda71bce3ef60403ce703de87064b885f340592e97cc11f AS builder
 
-# I sort of hate that this is duped in .drone.yml and here.
-# note that if you update one, you probably have to update the other.
-RUN apt update && apt install -y \
-    bsdmainutils \
-    build-essential \
-    make \
-    bundler \
-    ghostscript \
-    imagemagick \
-    libxml2-dev \
-    libxslt-dev \
-    nodejs \
-    npm \
-    pkg-config
+FROM starefossen/ruby-node:2-6-alpine
 
-WORKDIR /var/jekyll
+ENV GITHUB_GEM_VERSION 202
+ENV JSON_GEM_VERSION 1.8.6
 
-ADD ./Gemfile* /var/jekyll/
+RUN apk --update add --virtual build_deps \
+    build-base ruby-dev libc-dev linux-headers \
+  && gem install --verbose --no-document \
+    json:${JSON_GEM_VERSION} \
+    github-pages:${GITHUB_GEM_VERSION} \
+    jekyll-github-metadata \
+    minitest \
+  && apk del build_deps \
+  && apk add git \
+  && mkdir -p /usr/src/app \
+  && rm -rf /usr/lib/ruby/gems/*/cache/*.gem
 
-RUN npm install -g yarn && \
-    echo "gem: --no-ri --no-rdoc" > ~/.gemrc && \
-    yes | gem update --system && \
-    gem install bundler && \
-    bundle install
+WORKDIR /usr/src/app
+COPY . /usr/src/app
 
-ADD . /var/jekyll/
-
-RUN make build
-
-# finally, copy static over to serving container:
-FROM nginx
-COPY --from=builder /var/jekyll/_site /usr/share/nginx/html/
+EXPOSE 80
+CMD jekyll serve -d /_site --watch --force_polling -H 0.0.0.0 -P 80
