@@ -1,13 +1,34 @@
-FROM ruby:2.3 as build
+FROM ruby@sha256:7c77d7351acbf335aeda71bce3ef60403ce703de87064b885f340592e97cc11f AS builder
 
-ENV JEKYLL_ENV: production
-WORKDIR /usr/src/app
+# I sort of hate that this is duped in .drone.yml and here.
+# note that if you update one, you probably have to update the other.
+RUN apt update && apt install -y \
+    bsdmainutils \
+    build-essential \
+    make \
+    bundler \
+    ghostscript \
+    imagemagick \
+    libxml2-dev \
+    libxslt-dev \
+    nodejs \
+    npm \
+    pkg-config
 
-COPY . /usr/src/app
+WORKDIR /var/jekyll
 
-RUN bundle install && \
-    bundle exec jekyll build -d public
+ADD ./Gemfile* /var/jekyll/
 
-FROM httpd:2.4-alpine
+RUN npm install -g yarn && \
+    echo "gem: --no-ri --no-rdoc" > ~/.gemrc && \
+    yes | gem update --system && \
+    gem install bundler && \
+    bundle install
 
-COPY --from=build /usr/src/app/public/ /usr/local/apache2/htdocs/
+ADD . /var/jekyll/
+
+RUN make build
+
+# finally, copy static over to serving container:
+FROM nginx
+COPY --from=builder /var/jekyll/_site /usr/share/nginx/html/
